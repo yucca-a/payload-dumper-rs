@@ -1,0 +1,49 @@
+[package]
+name = "payload-dumper-rs"
+version = "0.1.0"
+edition = "2024"
+description = "Fast Android OTA payload.bin dumper — supports local files, ZIP archives, and HTTP/HTTPS URLs with Range requests"
+authors = ["Yucca <yucca-a>"]
+license = "Apache-2.0"
+repository = "https://github.com/yucca-a/payload-dumper-rs"
+keywords = ["android", "ota", "payload", "dumper"]
+categories = ["command-line-utilities"]
+
+[[bin]]
+name = "payload-dumper"
+path = "src/main.rs"
+
+[lib]
+name = "payload_dumper"
+path = "src/lib.rs"
+
+[dependencies]
+# CLI
+clap = { version = "4", features = ["derive"] }
+
+# Compression
+bzip2 = "0.5"
+xz2 = "0.1"
+zstd = "0.13"
+
+# Protobuf
+prost = "0.13"
+
+# Parallelism
+rayon = "1"
+
+# HTTP Range requests
+ureq = { version = "2", default-features = false, features = ["tls"] }
+
+# Error handling
+anyhow = "1"
+
+# Progress bar
+indicatif = "0.17"
+
+# ZIP parsing (local ZIP support)
+zip = "2"
+tempfile = "3"
+
+[build-dependencies]
+prost-build = "0.13"
