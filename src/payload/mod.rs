@@ -612,7 +612,6 @@ impl Payload {
 
     /// Read blocks from an old partition image at specified source extents.
     fn read_src_extents(&self, old: &File, extents: &[proto::Extent]) -> Result<Vec<u8>> {
-        use std::os::unix::fs::FileExt;
         let total: u64 = extents.iter()
             .map(|e| e.num_blocks.unwrap_or(0) * self.block_size)
             .sum();
@@ -621,7 +620,7 @@ impl Payload {
         for ext in extents {
             let start = ext.start_block.unwrap_or(0) * self.block_size;
             let size = (ext.num_blocks.unwrap_or(0) * self.block_size) as usize;
-            FileExt::read_exact_at(old, &mut data[pos..pos + size], start)
+            pread_exact(old, &mut data[pos..pos + size], start)
                 .context("read old partition image")?;
             pos += size;
         }
@@ -635,7 +634,6 @@ impl Payload {
         extents: &[proto::Extent],
         data: &[u8],
     ) -> Result<()> {
-        use std::os::unix::fs::FileExt;
         let mut offset = 0usize;
         for ext in extents {
             let start = ext.start_block.unwrap_or(0) * self.block_size;
@@ -647,7 +645,7 @@ impl Payload {
                     size, data.len()
                 );
             }
-            out.write_all_at(&data[offset..end], start)?;
+            pwrite_all(out, &data[offset..end], start)?;
             offset = end;
         }
         Ok(())
@@ -797,4 +795,52 @@ fn bsdiff_off(buf: &[u8]) -> i64 {
     let raw = u64::from_le_bytes(buf[..8].try_into().unwrap());
     let abs = (raw & 0x7FFF_FFFF_FFFF_FFFF) as i64;
     if raw >> 63 != 0 { -abs } else { abs }
+}
+
+// ── Cross-platform positioned IO helpers ────────────────────────────────────
+
+#[cfg(unix)]
+fn pread_exact(f: &File, buf: &mut [u8], offset: u64) -> std::io::Result<()> {
+    use std::os::unix::fs::FileExt;
+    FileExt::read_exact_at(f, buf, offset)
+}
+
+#[cfg(windows)]
+fn pread_exact(f: &File, buf: &mut [u8], offset: u64) -> std::io::Result<()> {
+    use std::os::windows::fs::FileExt;
+    let mut done = 0;
+    while done < buf.len() {
+        let n = f.seek_read(&mut buf[done..], offset + done as u64)?;
+        if n == 0 {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::UnexpectedEof,
+                format!("unexpected EOF at offset {}", offset + done as u64),
+            ));
+        }
+        done += n;
+    }
+    Ok(())
+}
+
+#[cfg(unix)]
+fn pwrite_all(f: &File, buf: &[u8], offset: u64) -> std::io::Result<()> {
+    use std::os::unix::fs::FileExt;
+    FileExt::write_all_at(f, buf, offset)
+}
+
+#[cfg(windows)]
+fn pwrite_all(f: &File, buf: &[u8], offset: u64) -> std::io::Result<()> {
+    use std::os::windows::fs::FileExt;
+    let mut done = 0;
+    while done < buf.len() {
+        let n = f.seek_write(&buf[done..], offset + done as u64)?;
+        if n == 0 {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::WriteZero,
+                "write returned zero",
+            ));
+        }
+        done += n;
+    }
+    Ok(())
 }

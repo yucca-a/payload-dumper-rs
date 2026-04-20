@@ -1,0 +1,11 @@
+[build.env]
+passthrough = ["PROTOC"]
+
+[target.x86_64-unknown-linux-musl]
+pre-build = ["apt-get update -qq && apt-get install -y --no-install-recommends protobuf-compiler"]
+
+[target.aarch64-unknown-linux-musl]
+pre-build = ["apt-get update -qq && apt-get install -y --no-install-recommends protobuf-compiler"]
+
+[target.armv7-unknown-linux-musleabihf]
+pre-build = ["apt-get update -qq && apt-get install -y --no-install-recommends protobuf-compiler"]

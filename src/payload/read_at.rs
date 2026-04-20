@@ -20,8 +20,24 @@ pub trait ReadAt: Send + Sync {
 
 impl ReadAt for std::fs::File {
     fn read_exact_at(&self, buf: &mut [u8], offset: u64) -> Result<()> {
-        use std::os::unix::fs::FileExt;
-        Ok(FileExt::read_exact_at(self, buf, offset)?)
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::FileExt;
+            Ok(FileExt::read_exact_at(self, buf, offset)?)
+        }
+        #[cfg(windows)]
+        {
+            use std::os::windows::fs::FileExt;
+            let mut done = 0;
+            while done < buf.len() {
+                let n = self.seek_read(&mut buf[done..], offset + done as u64)?;
+                if n == 0 {
+                    anyhow::bail!("unexpected EOF at offset {}", offset + done as u64);
+                }
+                done += n;
+            }
+            Ok(())
+        }
     }
 
     fn size(&self) -> Option<u64> {
