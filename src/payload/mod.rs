@@ -407,11 +407,14 @@ impl Payload {
     }
 
     /// Extract specific partitions (or all if `names` is empty) to `output_dir`.
+    ///
+    /// `threads`: number of parallel partition workers (0 = use all logical CPUs).
     pub fn extract(
         &self,
         output_dir: &Path,
         names: &[String],
         source_dir: Option<&Path>,
+        threads: usize,
     ) -> Result<()> {
         std::fs::create_dir_all(output_dir)?;
 
@@ -434,20 +437,14 @@ impl Payload {
             bail!("No partitions to extract");
         }
 
-        // Flatten all (partition, operation_index) pairs for maximum parallelism.
-        // First, create output files and collect metadata.
         struct PartMeta {
             name: String,
             out_file: File,
             old_file: Option<File>,
-            #[allow(dead_code)]
-            total_size: u64,
         }
         let mut part_metas: Vec<PartMeta> = Vec::with_capacity(partitions.len());
-        // Map from partition index → operation list
-        let mut all_ops: Vec<(usize, usize, &InstallOperation)> = Vec::new();
 
-        for (pi, part) in partitions.iter().enumerate() {
+        for (_pi, part) in partitions.iter().enumerate() {
             let name = &part.partition_name;
             let out_path = output_dir.join(format!("{name}.img"));
 
@@ -480,23 +477,40 @@ impl Payload {
                 None
             };
 
-            part_metas.push(PartMeta { name: name.clone(), out_file, old_file, total_size });
-
-            for (oi, op) in part.operations.iter().enumerate() {
-                all_ops.push((pi, oi, op));
-            }
+            part_metas.push(PartMeta { name: name.clone(), out_file, old_file });
         }
 
         // reader 是 Arc<dyn ReadAt>，天然线程安全，直接共享引用。
         let src: &dyn ReadAt = self.reader.as_ref();
 
-        // 跨所有分区、所有 operation 并行处理，最大化吞吐量。
-        all_ops.par_iter().try_for_each(|&(pi, oi, op)| -> Result<()> {
-            let meta = &part_metas[pi];
-            self.apply_operation(src, &meta.out_file, op, meta.old_file.as_ref())
-                .with_context(|| format!("{}: operation {oi} (type {:?}) failed",
-                    meta.name,
-                    install_operation::Type::try_from(op.r#type)))
+        // Build a rayon thread pool scoped to the requested thread count.
+        // threads=0 means "use all logical CPUs" (rayon default).
+        let pool = {
+            let mut builder = rayon::ThreadPoolBuilder::new();
+            if threads > 0 {
+                builder = builder.num_threads(threads);
+            }
+            builder.build().context("build rayon thread pool")?
+        };
+
+        // Flatten all (partition_index, op_index, op) for cross-partition op-level parallelism.
+        // This maximises CPU utilisation on fast NVMe storage.
+        // On slow HDD/SATA storage, reduce --threads to limit concurrent random IO.
+        let mut all_ops: Vec<(usize, usize, &InstallOperation)> = Vec::new();
+        for (pi, part) in partitions.iter().enumerate() {
+            for (oi, op) in part.operations.iter().enumerate() {
+                all_ops.push((pi, oi, op));
+            }
+        }
+
+        pool.install(|| {
+            all_ops.par_iter().try_for_each(|&(pi, oi, op)| -> Result<()> {
+                let meta = &part_metas[pi];
+                self.apply_operation(src, &meta.out_file, op, meta.old_file.as_ref())
+                    .with_context(|| format!("{}: operation {oi} (type {:?}) failed",
+                        meta.name,
+                        install_operation::Type::try_from(op.r#type)))
+            })
         })?;
 
         for meta in &part_metas {

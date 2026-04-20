@@ -39,6 +39,11 @@ enum Cmd {
         /// Directory containing old partition images for incremental OTA.
         #[arg(long)]
         source_dir: Option<PathBuf>,
+
+        /// Number of parallel partition workers (default: all logical CPUs).
+        /// Lower this on slow storage (HDD / network) to reduce IO contention.
+        #[arg(short, long, default_value = "0")]
+        threads: usize,
     },
 
     /// Export payload metadata as JSON.
@@ -70,7 +75,7 @@ fn main() -> Result<()> {
             }
         }
 
-        Cmd::Extract { source, out, partitions, source_dir } => {
+        Cmd::Extract { source, out, partitions, source_dir, threads } => {
             let payload = open_payload(&source)?;
 
             let names: Vec<String> = partitions
@@ -107,7 +112,7 @@ fn main() -> Result<()> {
             );
 
             std::fs::create_dir_all(&out).context("create output directory")?;
-            payload.extract(&out, &names, source_dir.as_deref())?;
+            payload.extract(&out, &names, source_dir.as_deref(), threads)?;
             pb.finish_with_message("Done");
         }
 
