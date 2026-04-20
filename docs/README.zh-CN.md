@@ -10,7 +10,9 @@
 2. 直接从 **HTTP/HTTPS URL** 提取分区，无需下载整个 OTA 包。通过 HTTP Range 请求，仅按需获取所需字节。
 3. 利用全部 CPU 核心的**并行**提取。
 4. 完整支持 **ZIP64**，可处理大于 4 GB 的 OTA 包。
-5. 既可作为 **命令行工具** 使用，也可作为 **Rust 库** 集成到其他项目。
+5. **增量（差分）OTA 支持** —— `SOURCE_COPY`、`SOURCE_BSDIFF`、`BROTLI_BSDIFF` 操作，兼容 BSDIFF40 和 BSDF2 两种补丁格式。
+6. **元数据导出** —— 将 OTA 完整元数据导出为 JSON（分区信息、动态分区组、操作类型统计等）。
+7. 既可作为 **命令行工具** 使用，也可作为 **Rust 库** 集成到其他项目。
 
 ## 环境要求
 
@@ -68,6 +70,24 @@ payload-dumper extract ota.zip --partitions boot,init_boot,vbmeta
 payload-dumper extract https://example.com/ota.zip -p boot,init_boot --out ./output
 ```
 
+### 提取增量（差分）OTA
+
+将旧版分区镜像放入一个目录（如 `old/boot.img`、`old/system.img`），然后：
+
+```bash
+payload-dumper extract incremental_ota.zip --source-dir ./old --out ./output
+```
+
+### 导出元数据为 JSON
+
+```bash
+# 输出到标准输出
+payload-dumper metadata ota.zip
+
+# 保存到文件
+payload-dumper metadata ota.zip -o metadata.json
+```
+
 ## 作为库使用
 
 ```rust
@@ -92,7 +112,14 @@ for part in p.list_partitions() {
 }
 
 // 提取到目录（空切片 = 提取全部分区）
-p.extract(Path::new("output"), &[])?;
+p.extract(Path::new("output"), &[], None)?;
+
+// 增量 OTA：提供旧分区镜像目录
+p.extract(Path::new("output"), &[], Some(Path::new("old")))?;
+
+// 导出元数据为 JSON
+let meta = p.metadata_export();
+println!("{}", serde_json::to_string_pretty(&meta)?);
 ```
 
 ## 致谢

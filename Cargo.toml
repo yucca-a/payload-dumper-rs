@@ -1,6 +1,6 @@
 [package]
 name = "payload-dumper-rs"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2024"
 description = "Fast Android OTA payload.bin dumper — supports local files, ZIP archives, and HTTP/HTTPS URLs with Range requests"
 authors = ["Yucca <yucca-a>"]
@@ -44,6 +44,13 @@ indicatif = "0.17"
 # ZIP parsing (local ZIP support)
 zip = "2"
 tempfile = "3"
+
+# Brotli decompression (BROTLI_BSDIFF + BSDF2 patches)
+brotli = "6"
+
+# Metadata export (JSON)
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
 
 [build-dependencies]
 prost-build = "0.13"

@@ -35,6 +35,20 @@ enum Cmd {
         /// Comma-separated partition names to extract (default: all).
         #[arg(short, long)]
         partitions: Option<String>,
+
+        /// Directory containing old partition images for incremental OTA.
+        #[arg(long)]
+        source_dir: Option<PathBuf>,
+    },
+
+    /// Export payload metadata as JSON.
+    Metadata {
+        /// payload.bin / OTA ZIP file path or URL.
+        source: String,
+
+        /// Output file path (default: print to stdout).
+        #[arg(short, long)]
+        out: Option<PathBuf>,
     },
 }
 
@@ -56,7 +70,7 @@ fn main() -> Result<()> {
             }
         }
 
-        Cmd::Extract { source, out, partitions } => {
+        Cmd::Extract { source, out, partitions, source_dir } => {
             let payload = open_payload(&source)?;
 
             let names: Vec<String> = partitions
@@ -75,6 +89,15 @@ fn main() -> Result<()> {
                 parts.iter().filter(|p| names.contains(&p.name)).collect()
             };
 
+            if payload.is_incremental() {
+                if source_dir.is_some() {
+                    eprintln!("[*] Incremental OTA detected, using old images from {:?}", source_dir.as_ref().unwrap());
+                } else {
+                    eprintln!("[*] Warning: incremental OTA detected but --source-dir not specified");
+                    eprintln!("    Differential operations will fail. Use --source-dir <PATH> to provide old images.");
+                }
+            }
+
             println!("Extracting {} partition(s) to {}", targets.len(), out.display());
 
             let pb = ProgressBar::new(targets.len() as u64);
@@ -84,8 +107,22 @@ fn main() -> Result<()> {
             );
 
             std::fs::create_dir_all(&out).context("create output directory")?;
-            payload.extract(&out, &names)?;
+            payload.extract(&out, &names, source_dir.as_deref())?;
             pb.finish_with_message("Done");
+        }
+
+        Cmd::Metadata { source, out } => {
+            let payload = open_payload(&source)?;
+            let meta = payload.metadata_export();
+            let json = serde_json::to_string_pretty(&meta)
+                .context("serialize metadata to JSON")?;
+            if let Some(path) = out {
+                std::fs::write(&path, &json)
+                    .with_context(|| format!("write metadata to {}", path.display()))?;
+                eprintln!("[*] Metadata written to {}", path.display());
+            } else {
+                println!("{json}");
+            }
         }
     }
 

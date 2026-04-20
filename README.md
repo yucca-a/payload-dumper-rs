@@ -10,7 +10,9 @@ Compared to Python-based tools, this project adds:
 2. Extract partitions directly from an **HTTP/HTTPS URL** — no need to download the entire OTA package. Only the bytes needed are fetched via HTTP Range requests.
 3. **Parallel** extraction using all available CPU cores.
 4. Full **ZIP64** support for OTA packages larger than 4 GB.
-5. Works as both a **CLI tool** and a **Rust library**.
+5. **Incremental (differential) OTA** support — `SOURCE_COPY`, `SOURCE_BSDIFF`, `BROTLI_BSDIFF` operations with both BSDIFF40 and BSDF2 patch formats.
+6. **Metadata export** — dump comprehensive OTA metadata as JSON (partitions, dynamic partition groups, operation breakdown, etc.).
+7. Works as both a **CLI tool** and a **Rust library**.
 
 ## Requirements
 
@@ -68,6 +70,24 @@ payload-dumper extract ota.zip --partitions boot,init_boot,vbmeta
 payload-dumper extract https://example.com/ota.zip -p boot,init_boot --out ./output
 ```
 
+### Extract incremental (differential) OTA
+
+Place old partition images in a directory (e.g. `old/boot.img`, `old/system.img`), then:
+
+```bash
+payload-dumper extract incremental_ota.zip --source-dir ./old --out ./output
+```
+
+### Export metadata as JSON
+
+```bash
+# Print to stdout
+payload-dumper metadata ota.zip
+
+# Save to file
+payload-dumper metadata ota.zip -o metadata.json
+```
+
 ## Library Usage
 
 ```rust
@@ -92,7 +112,14 @@ for part in p.list_partitions() {
 }
 
 // Extract to directory (empty slice = all partitions)
-p.extract(Path::new("output"), &[])?;
+p.extract(Path::new("output"), &[], None)?;
+
+// Incremental OTA: provide old images directory
+p.extract(Path::new("output"), &[], Some(Path::new("old")))?
+
+// Export metadata as JSON
+let meta = p.metadata_export();
+println!("{}", serde_json::to_string_pretty(&meta)?);
 ```
 
 ## Acknowledgments
