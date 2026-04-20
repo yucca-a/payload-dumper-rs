@@ -21,9 +21,9 @@ path = "src/lib.rs"
 # CLI
 clap = { version = "4", features = ["derive"] }
 
-# Compression
-bzip2 = "0.5"
-xz2 = "0.1"
+# Compression (static = bundle C source, required for cross-compilation / Android NDK)
+bzip2 = { version = "0.5", features = ["static"] }
+xz2 = { version = "0.1", features = ["static"] }
 zstd = "0.13"
 
 # Protobuf
